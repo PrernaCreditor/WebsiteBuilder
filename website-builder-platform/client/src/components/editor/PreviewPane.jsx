@@ -2,6 +2,8 @@
 import React, { useMemo } from "react";
 
 export default function PreviewPane({ sections }) {
+  const hasSections = (sections || []).length > 0;
+
   const srcDoc = useMemo(() => {
     const htmlBody = (sections || []).map((s) => s.html).join("\n\n");
     const cssAll = (sections || []).map((s) => s.css).join("\n\n");
@@ -21,6 +23,20 @@ export default function PreviewPane({ sections }) {
           sans-serif;
       }
       body {
+        display: block;
+      }
+      img {
+        max-width: 100%;
+        height: auto;
+      }
+      .wb-img {
+        max-width: 720px;
+        margin: 1rem auto;
+        display: block;
+      }
+      .wb-img img {
+        border-radius: 12px;
+        width: 100%;
         display: block;
       }
     `;
@@ -70,6 +86,17 @@ export default function PreviewPane({ sections }) {
         </div>
       </div>
       <div className="preview-body">
+        {!hasSections && (
+          <div
+            style={{
+              padding: "12px 0",
+              fontSize: 13,
+              color: "#9ca3af",
+            }}
+          >
+            Add a section to see the live preview.
+          </div>
+        )}
         <iframe
           title="Preview"
           srcDoc={srcDoc}

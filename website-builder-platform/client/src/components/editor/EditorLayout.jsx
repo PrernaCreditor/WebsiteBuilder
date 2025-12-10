@@ -18,6 +18,7 @@ export default function EditorLayout({
   onAddSection,
   onUploadImages,
   onInsertImageIntoSection,
+  onRemoveImage,
 }) {
   const [selectedSectionId, setSelectedSectionId] = useState(
     project?.sections?.[0]?.id || null
@@ -25,10 +26,17 @@ export default function EditorLayout({
 
   // Keep selected section valid when project changes
   useEffect(() => {
-    if (project && project.sections.length > 0) {
+    if (!project) {
+      setSelectedSectionId(null);
+      return;
+    }
+
+    if (project.sections && project.sections.length > 0) {
       if (!project.sections.find((s) => s.id === selectedSectionId)) {
         setSelectedSectionId(project.sections[0].id);
       }
+    } else {
+      setSelectedSectionId(null);
     }
   }, [project, selectedSectionId]);
 
@@ -80,11 +88,13 @@ export default function EditorLayout({
   };
 
   const handleAddSectionClick = () => {
-    onAddSection();
-    if (project && project.sections.length > 0) {
-      const last = project.sections[project.sections.length - 1];
-      setSelectedSectionId(last.id);
+    const newId = onAddSection();
+    if (newId) {
+      setSelectedSectionId(newId);
+      return;
     }
+
+    // fallback: keep current selection if no new id returned
   };
 
   const handleInsertImage = (imageUrl) => {
@@ -101,8 +111,9 @@ export default function EditorLayout({
           </button>
           <input
             className="editor-name-input"
-            value={project.name}
+            value={project.name || ""}
             onChange={handleNameChange}
+            placeholder="Project name"
           />
         </div>
         <div className="editor-toolbar-right">
@@ -168,6 +179,7 @@ export default function EditorLayout({
               images={project.images}
               onUploadImages={onUploadImages}
               onInsertImage={handleInsertImage}
+              onRemoveImage={onRemoveImage}
             />
           </div>
         </div>

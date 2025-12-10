@@ -72,7 +72,7 @@ export default function NewProjectView({ templates, onCreate, onCancel }) {
                   }
                   onClick={() => setSelectedId(tpl.id)}
                 >
-                  <div className="template-chip">Template</div>
+                  <div className="template-chip">{tpl.name}</div>
                   <h3 className="template-title">{tpl.name}</h3>
                   <p className="template-desc">
                     Pre-built sections you can customize with HTML and CSS.

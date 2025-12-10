@@ -1,6 +1,11 @@
 import React from "react";
 
-export default function ImagePanel({ images, onUploadImages, onInsertImage }) {
+export default function ImagePanel({
+  images,
+  onUploadImages,
+  onInsertImage,
+  onRemoveImage,
+}) {
   const handleFileChange = (e) => {
     const files = e.target.files;
     if (files && files.length) {
@@ -48,6 +53,14 @@ export default function ImagePanel({ images, onUploadImages, onInsertImage }) {
                 >
                   Insert
                 </button>
+                {onRemoveImage && (
+                  <button
+                    className="btn btn-ghost image-remove-btn"
+                    onClick={() => onRemoveImage(img.id)}
+                  >
+                    Remove
+                  </button>
+                )}
               </div>
             </div>
           ))}

@@ -1,5 +1,5 @@
 // src/WebsiteBuilder.jsx
-import React, { useState, useMemo, useEffect } from "react";
+import React, { useState, useMemo, useEffect, useCallback } from "react";
 import TopBar from "./components/layout/TopBar";
 import ProjectList from "./components/dashboard/ProjectList";
 import EditorLayout from "./components/editor/EditorLayout";
@@ -7,46 +7,15 @@ import NewProjectView from "./components/dashboard/NewProjectView";
 import {
   createInitialProjects,
   createNewProject,
+  combineSections,
+  createBlankSection,
 } from "./state/projectsStore";
 import { slugify } from "./utils/generateSlug";
 import { templates } from "./utils/templates";
-
-const STORAGE_KEY = "website-builder-projects-v1";
-
-// Load projects from localStorage, or fall back to initial template project
-function loadInitialProjects() {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return createInitialProjects();
-    const parsed = JSON.parse(raw);
-    if (!Array.isArray(parsed) || parsed.length === 0) {
-      return createInitialProjects();
-    }
-    return parsed;
-  } catch (err) {
-    console.error("Failed to load projects from storage", err);
-    return createInitialProjects();
-  }
-}
-
-function createBlankSection(name, index) {
-  return {
-    id: "section-" + Date.now() + "-" + index,
-    name: name || `Section ${index + 1}`,
-    html: `<section>
-  <h2>${name || `Section ${index + 1}`}</h2>
-  <p>Edit this section content.</p>
-</section>`,
-    css: `section {
-  padding: 2rem;
-  background: #020617;
-  color: #e5e7eb;
-}`,
-  };
-}
+import { loadProjects, saveProjects } from "./api/projectsApi";
 
 // Only computed once when the module loads
-const initialProjects = loadInitialProjects();
+const initialProjects = loadProjects(createInitialProjects);
 
 export default function WebsiteBuilder() {
   const [view, setView] = useState("dashboard"); // "dashboard" | "new-project" | "editor"
@@ -62,12 +31,44 @@ export default function WebsiteBuilder() {
 
   // 🔹 Persist projects any time they change
   useEffect(() => {
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(projects));
-    } catch (err) {
-      console.error("Failed to save projects to storage", err);
-    }
+    saveProjects(projects);
   }, [projects]);
+
+  // Ensure selected project stays valid if projects change
+  useEffect(() => {
+    if (!selectedProjectId && projects.length > 0) {
+      setSelectedProjectId(projects[0].id);
+    }
+  }, [projects, selectedProjectId]);
+
+  const updateProject = useCallback((id, updater) => {
+    setProjects((prev) =>
+      prev.map((p) => {
+        if (p.id !== id) return p;
+        const updates = typeof updater === "function" ? updater(p) : updater;
+        return {
+          ...p,
+          ...updates,
+          updatedAt: new Date().toISOString(),
+        };
+      })
+    );
+  }, []);
+
+  const updateProjectSections = useCallback((projectId, nextSectionsFactory) => {
+    updateProject(projectId, (project) => {
+      const nextSections =
+        typeof nextSectionsFactory === "function"
+          ? nextSectionsFactory(project.sections || [])
+          : nextSectionsFactory || [];
+      const combined = combineSections(nextSections);
+      return {
+        sections: nextSections,
+        htmlCode: combined.html,
+        cssCode: combined.css,
+      };
+    });
+  }, [updateProject]);
 
   // ---------------- navigation / selection ----------------
   const handleOpenNewProjectView = () => {
@@ -94,14 +95,6 @@ export default function WebsiteBuilder() {
     setView("dashboard");
   };
 
-  const updateProject = (id, data) => {
-    setProjects((prev) =>
-      prev.map((p) =>
-        p.id === id ? { ...p, ...data, updatedAt: new Date().toISOString() } : p
-      )
-    );
-  };
-
   // ---------------- project-level handlers ----------------
   const handleRenameProject = (newName) => {
     if (!selectedProject) return;
@@ -126,45 +119,23 @@ export default function WebsiteBuilder() {
   };
 
   // ---------------- section helpers & handlers ----------------
-  const recomputePageFromSections = (sections) => {
-    const htmlCombined = sections.map((s) => s.html).join("\n\n");
-    const cssCombined = sections.map((s) => s.css).join("\n\n");
-    return { htmlCombined, cssCombined };
-  };
-
   const handleUpdateSectionHtml = (sectionId, html) => {
     if (!selectedProject) return;
-    const newSections = selectedProject.sections.map((s) =>
-      s.id === sectionId ? { ...s, html } : s
+    updateProjectSections(selectedProject.id, (sections) =>
+      sections.map((s) => (s.id === sectionId ? { ...s, html } : s))
     );
-
-    const { htmlCombined, cssCombined } = recomputePageFromSections(newSections);
-
-    updateProject(selectedProject.id, {
-      sections: newSections,
-      htmlCode: htmlCombined,
-      cssCode: cssCombined,
-    });
   };
 
   const handleUpdateSectionCss = (sectionId, css) => {
     if (!selectedProject) return;
-    const newSections = selectedProject.sections.map((s) =>
-      s.id === sectionId ? { ...s, css } : s
+    updateProjectSections(selectedProject.id, (sections) =>
+      sections.map((s) => (s.id === sectionId ? { ...s, css } : s))
     );
-
-    const { htmlCombined, cssCombined } = recomputePageFromSections(newSections);
-
-    updateProject(selectedProject.id, {
-      sections: newSections,
-      htmlCode: htmlCombined,
-      cssCode: cssCombined,
-    });
   };
 
   const handleReorderSections = (fromIndex, toIndex) => {
     if (!selectedProject) return;
-    const sections = [...selectedProject.sections];
+    const sections = [...(selectedProject.sections || [])];
     if (
       toIndex < 0 ||
       toIndex >= sections.length ||
@@ -176,17 +147,11 @@ export default function WebsiteBuilder() {
     const [moved] = sections.splice(fromIndex, 1);
     sections.splice(toIndex, 0, moved);
 
-    const { htmlCombined, cssCombined } = recomputePageFromSections(sections);
-
-    updateProject(selectedProject.id, {
-      sections,
-      htmlCode: htmlCombined,
-      cssCode: cssCombined,
-    });
+    updateProjectSections(selectedProject.id, sections);
   };
 
   const handleAddSection = () => {
-    if (!selectedProject) return;
+    if (!selectedProject) return null;
 
     const sections = selectedProject.sections || [];
     const newSection = createBlankSection(
@@ -195,13 +160,8 @@ export default function WebsiteBuilder() {
     );
     const newSections = [...sections, newSection];
 
-    const { htmlCombined, cssCombined } = recomputePageFromSections(newSections);
-
-    updateProject(selectedProject.id, {
-      sections: newSections,
-      htmlCode: htmlCombined,
-      cssCode: cssCombined,
-    });
+    updateProjectSections(selectedProject.id, newSections);
+    return newSection.id;
   };
 
   // ---------------- image handlers ----------------
@@ -222,19 +182,20 @@ export default function WebsiteBuilder() {
 
   const handleInsertImageIntoSection = (sectionId, imageUrl) => {
     if (!selectedProject) return;
-    const newSections = selectedProject.sections.map((s) => {
-      if (s.id !== sectionId) return s;
-      const imgTag = `\n<img src="${imageUrl}" alt="" />`;
-      return { ...s, html: (s.html || "") + imgTag };
-    });
+    updateProjectSections(selectedProject.id, (sections) =>
+      sections.map((s) => {
+        if (s.id !== sectionId) return s;
+        const imgTag = `\n<figure class="wb-img"><img src="${imageUrl}" alt="" /></figure>`;
+        return { ...s, html: (s.html || "") + imgTag };
+      })
+    );
+  };
 
-    const { htmlCombined, cssCombined } = recomputePageFromSections(newSections);
-
-    updateProject(selectedProject.id, {
-      sections: newSections,
-      htmlCode: htmlCombined,
-      cssCode: cssCombined,
-    });
+  const handleRemoveImage = (imageId) => {
+    if (!selectedProject) return;
+    updateProject(selectedProject.id, (project) => ({
+      images: (project.images || []).filter((img) => img.id !== imageId),
+    }));
   };
 
   // ---------------- render ----------------
@@ -272,6 +233,7 @@ export default function WebsiteBuilder() {
             onAddSection={handleAddSection}
             onUploadImages={handleUploadImages}
             onInsertImageIntoSection={handleInsertImageIntoSection}
+            onRemoveImage={handleRemoveImage}
           />
         )}
       </div>
